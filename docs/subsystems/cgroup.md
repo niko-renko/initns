@@ -12,7 +12,7 @@ Constants:
 Called once from `main()`. Mounts cgroup v2 at `/sys/fs/cgroup` (`mount("cgroup", CGROUP_ROOT, "cgroup2", 0, NULL)`); `EBUSY` is tolerated (already mounted). Then `mkdir(/sys/fs/cgroup/initns, 0755)`, tolerating `EEXIST`.
 
 ### `int new_cgroup(const char *name)`
-`mkdir /sys/fs/cgroup/initns/<name>` and `open` it with `O_DIRECTORY`. Returns the fd — the caller passes it to `clone3` via `clone_args.cgroup` so the child is spawned directly inside the new cgroup (no post-hoc migration), and then `close`s it.
+`mkdir /sys/fs/cgroup/initns/<name>` and `open` it with `O_DIRECTORY | O_CLOEXEC`. Returns the fd — the caller passes it to `clone3` via `clone_args.cgroup` so the child is spawned directly inside the new cgroup (no post-hoc migration), and then `close`s it.
 
 ### `rm_cgroup(const char *name)` / `wait_cgroup_empty(path)` / `rm_cgroup_children(path)`
 Three-step teardown:

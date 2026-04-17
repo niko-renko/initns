@@ -41,7 +41,7 @@ int new_cgroup(char *name) {
              name);
     if (mkdir(cgpath, 0755) == -1)
         die("mkdir");
-    int fd = open(cgpath, O_DIRECTORY);
+    int fd = open(cgpath, O_DIRECTORY | O_CLOEXEC);
     if (fd < 0)
         die("cgroup open");
     return fd;
@@ -50,7 +50,7 @@ int new_cgroup(char *name) {
 static void wait_cgroup_empty(const char *cgpath) {
     char events_path[PATH_MAX];
     snprintf(events_path, sizeof(events_path), "%s/cgroup.events", cgpath);
-    int fd = open(events_path, O_RDONLY);
+    int fd = open(events_path, O_RDONLY | O_CLOEXEC);
     if (fd < 0)
         die("cgroup.events open");
 
@@ -118,7 +118,7 @@ void set_frozen_cgroup(char *name, int frozen) {
     char *frozen_str = frozen ? "1" : "0";
     snprintf(freeze_path, sizeof(freeze_path), "%s/%s/%s/cgroup.freeze",
              CGROUP_ROOT, CGROUP_NAME, name);
-    int fd = open(freeze_path, O_WRONLY);
+    int fd = open(freeze_path, O_WRONLY | O_CLOEXEC);
     if (fd < 0)
         die("cgroup.freeze open");
     if (write(fd, frozen_str, 1) != 1)
@@ -130,7 +130,7 @@ void kill_cgroup(char *name) {
     char kill_path[PATH_MAX];
     snprintf(kill_path, sizeof(kill_path), "%s/%s/%s/cgroup.kill", CGROUP_ROOT,
              CGROUP_NAME, name);
-    int fd = open(kill_path, O_WRONLY);
+    int fd = open(kill_path, O_WRONLY | O_CLOEXEC);
     if (fd < 0)
         die("cgroup.kill open");
     if (write(fd, "1", 1) != 1)

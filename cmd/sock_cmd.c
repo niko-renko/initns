@@ -30,7 +30,7 @@ static void *sock_cmd(void *arg) {
     int fd, cfd;
     struct sockaddr_un addr;
 
-    fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd == -1)
         die("socket");
 
@@ -46,7 +46,7 @@ static void *sock_cmd(void *arg) {
         die("listen");
 
     for (;;) {
-        cfd = accept(fd, NULL, NULL);
+        cfd = accept4(fd, NULL, NULL, SOCK_CLOEXEC);
 
         if (cfd == -1) {
             if (errno == EINTR)

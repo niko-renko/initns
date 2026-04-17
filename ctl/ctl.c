@@ -30,14 +30,14 @@ static pid_t clone_shell(void) {
         die("fork");
     if (pid > 0)
         return pid;
-    clean_fds();
 
     if (setsid() < 0)
         die("setsid");
 
-    int tty63 = open("/dev/tty63", O_RDWR | O_NOCTTY);
+    int tty63 = open("/dev/tty63", O_RDWR | O_NOCTTY | O_CLOEXEC);
     if (tty63 < 0)
         die("tty63 open");
+    dup2(tty63, STDIN_FILENO);
     dup2(tty63, STDOUT_FILENO);
     dup2(tty63, STDERR_FILENO);
     if (ioctl(tty63, TIOCSCTTY, (void *)1) < 0)
@@ -63,7 +63,6 @@ static void clone_pkill(int sid) {
             die("waitpid");
         return;
     }
-    clean_fds();
     char ssid[12];
     sprintf(ssid, "%d", sid);
     execl("/bin/pkill", "pkill", "-9", "-s", ssid, (char *)NULL);

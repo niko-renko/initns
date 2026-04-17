@@ -20,7 +20,7 @@
 #include <sys/wait.h>
 
 void die(const char *msg) {
-    int fd = open("/dev/kmsg", O_WRONLY);
+    int fd = open("/dev/kmsg", O_WRONLY | O_CLOEXEC);
     if (fd >= 0) {
         char buf[256];
         int n = snprintf(buf, sizeof(buf), "<3>initns: %s: %s\n", msg,
@@ -30,9 +30,4 @@ void die(const char *msg) {
         close(fd);
     }
     exit(1);
-}
-
-void clean_fds(void) {
-    for (int fd = 0; fd < sysconf(_SC_OPEN_MAX); fd++)
-        close(fd);
 }

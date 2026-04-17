@@ -20,7 +20,7 @@
 #include "../common.h"
 
 void vt_switch(int vt) {
-    int tty0 = open("/dev/tty0", O_RDWR);
+    int tty0 = open("/dev/tty0", O_RDWR | O_CLOEXEC);
     if (tty0 < 0)
         die("tty0 open");
     if (ioctl(tty0, VT_ACTIVATE, vt) < 0)
@@ -35,7 +35,7 @@ void vt_switch(int vt) {
 }
 
 void vt_mode(int modeval) {
-    int tty63 = open("/dev/tty63", O_RDWR | O_NOCTTY);
+    int tty63 = open("/dev/tty63", O_RDWR | O_NOCTTY | O_CLOEXEC);
     if (tty63 < 0)
         die("tty63 open");
     struct vt_mode mode = {0};

@@ -151,7 +151,7 @@ static void add_device(const char *path) {
     if (find_device(path))
         return;
 
-    int fd = open(path, O_RDONLY);
+    int fd = open(path, O_RDONLY | O_CLOEXEC);
     if (fd < 0)
         return;
     if (!classify_kbd(fd)) {
@@ -262,11 +262,11 @@ static void *kbd(void *arg) {
     State *state = arg;
     set_state(state);
 
-    epfd = epoll_create1(0);
+    epfd = epoll_create1(EPOLL_CLOEXEC);
     if (epfd < 0)
         die("epoll_create1");
 
-    inotify_fd = inotify_init1(0);
+    inotify_fd = inotify_init1(IN_CLOEXEC);
     if (inotify_fd < 0)
         die("inotify_init1");
     if (inotify_add_watch(inotify_fd, INPUT_DIR, IN_CREATE) < 0)

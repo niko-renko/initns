@@ -40,7 +40,6 @@ static void clone_tar(const char *tar, const char *dest) {
             die("waitpid");
         return;
     }
-    clean_fds();
     execl("/bin/tar", "tar", "xf", tar, "--strip-components=1", "-C", dest,
           (char *)NULL);
     die("execl tar");
@@ -55,7 +54,6 @@ static void clone_rm(const char *path) {
             die("waitpid");
         return;
     }
-    clean_fds();
     execl("/bin/rm", "rm", "-rf", path, (char *)NULL);
     die("execl rm");
 }
@@ -77,7 +75,6 @@ static pid_t clone_init(int cgroup, const char *name) {
         die("clone");
     if (pid > 0)
         return pid;
-    clean_fds();
 
     if (mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL) < 0)
         die("mount MS_PRIVATE failed");
@@ -205,7 +202,7 @@ static void cmd_ls(int out, char *type) {
         char instances[PATH_MAX];
         snprintf(instances, PATH_MAX, "%s/instances", ROOT);
 
-        int in = open(instances, O_RDONLY);
+        int in = open(instances, O_RDONLY | O_CLOEXEC);
         if (in < 0)
             die("instances open");
 

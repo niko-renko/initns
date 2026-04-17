@@ -12,7 +12,7 @@ typedef struct Node {
 } Node;
 
 static Node *load_file(const char *path) {
-    FILE *f = fopen(path, "r");
+    FILE *f = fopen(path, "re");
     if (!f)
         return NULL;
 
@@ -59,7 +59,7 @@ static int contains(Node *head, const char *s) {
 }
 
 static int save_file(const char *path, Node *head) {
-    FILE *f = fopen(path, "w");
+    FILE *f = fopen(path, "we");
     if (!f)
         return -1;
 
@@ -142,7 +142,7 @@ int file_remove(const char *path, const char *s) {
 }
 
 int file_set(const char *path, const char **strings, size_t count) {
-    FILE *f = fopen(path, "w");
+    FILE *f = fopen(path, "we");
     if (!f)
         return -1;
 

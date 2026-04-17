@@ -66,7 +66,7 @@ The previous design spawned one pthread per keyboard with a nonblocking `read` l
 `clone_shell()` (fork child path, `ctl.c:26`):
 
 1. `setsid()` — new session so `pkill -s` can address the whole tree later.
-2. `open("/dev/tty63", O_RDWR | O_NOCTTY)`, `dup2` it to stdout/stderr.
+2. `open("/dev/tty63", O_RDWR | O_NOCTTY | O_CLOEXEC)`, `dup2` it onto stdin/stdout/stderr (the dup'd copies don't inherit `O_CLOEXEC`, so they survive the `execl`; the original fd is closed automatically).
 3. `ioctl(TIOCSCTTY, 1)` — adopt as controlling TTY.
 4. `ioctl(KDSETMODE, KD_TEXT)` — make sure the VT is in text (not graphics) mode.
 5. `ioctl(KDSKBMODE, K_UNICODE)` — keyboard in Unicode mode.

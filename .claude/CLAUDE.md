@@ -20,7 +20,7 @@ Start with architecture, then protocol / on-disk layout for the big picture; div
 ```
 main.c             entry for bin/init (daemon, PID 1)
 main_initns.c      entry for bin/initns (CLI client)
-common.{c,h}       ROOT + SOCK_PATH constants, die(), clean_fds()
+common.{c,h}       ROOT + SOCK_PATH constants, die()
 Makefile           two targets: init, initns
 
 cmd/               socket server + command handlers + container bring-up
