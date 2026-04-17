@@ -18,7 +18,9 @@ Non-blocking reads on the inotify fd get `EAGAIN` — the loop sleeps `usleep(20
 
 ## `kbd/seq_listener.c` — hotkey detection
 
-One thread per keyboard. Opens the `event*` file `O_RDONLY | O_NONBLOCK` and reads a stream of `struct input_event`:
+One thread per keyboard. `spawn_seq_listener` allocates a `seq_listener_args` struct on the heap, hands ownership to the worker thread via `pthread_create`, and `pthread_detach`s the thread (nobody joins). Inside the worker, the device path is copied to a stack buffer and the heap struct is `free`d before the event loop starts, so no dangling pointer can outlive the thread.
+
+The worker opens the `event*` file `O_RDONLY | O_NONBLOCK` and reads a stream of `struct input_event`:
 
 - Tracks the press/release state of `KEY_LEFTCTRL`/`KEY_RIGHTCTRL` and `KEY_LEFTALT`/`KEY_RIGHTALT`.
 - When `KEY_J` arrives with `value == 1` (press) *and* both Ctrl and Alt are currently held, calls `on_ctl()`.

@@ -43,4 +43,8 @@ Container images are plain tarballs placed under `/var/lib/initns/images/<name>.
 
 ## Logging
 
-Nothing is captured to a file. `die()` and other `perror` calls write to whatever stderr PID 1 was given by the kernel — `/dev/console` during boot, typically nothing useful after.
+Fatal errors go through `die()`, which writes `<3>initns: <msg>: <strerror(errno)>\n` to `/dev/kmsg` and then `exit(1)`s. The `<3>` priority is `KERN_ERR`, so the line appears on the console even under `quiet` and lands in the kernel ring buffer in chronological order with kernel messages. To read it live: `dmesg | grep initns`.
+
+Since `exit(1)` from PID 1 is a kernel panic, capturing the kmsg across the reboot requires **pstore**. On EFI systems the easiest backend is `efi-pstore`: add `efi_pstore.pstore_disable=0` to `GRUB_CMDLINE_LINUX` in `/etc/default/grub`, run `grub-mkconfig -o /boot/grub/grub.cfg`, and reboot. After any future panic, `sudo cat /sys/fs/pstore/dmesg-efi-*` shows the tail of the ring buffer — including every `initns:` kmsg line — preserved across the reboot.
+
+No file-based log. No rotation. No syslog.

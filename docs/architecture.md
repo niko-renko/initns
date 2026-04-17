@@ -22,7 +22,7 @@ Both link the same set of common modules (`set/`, `cmd/`, `kbd/`, `state/`, `cgr
 5. `spawn_sock_cmd()` — start the Unix-socket command server thread.
 6. `pause()` forever.
 
-stdout/stderr are whatever the kernel handed PID 1 (usually `/dev/console`); `perror` output from `die()` and `sock_cmd`'s `accept` failure lands there, nothing is captured to a file.
+stdout/stderr are whatever the kernel handed PID 1 (usually `/dev/console`). Diagnostics from `die()` go to `/dev/kmsg` (not stderr) so they land in the kernel ring buffer and can be recovered via pstore across a panic. See `@build-and-run.md` for the logging setup.
 
 Three long-running thread classes exist:
 
@@ -91,4 +91,6 @@ VT63 is outside the range most setups wire to a getty, so it can host an interac
 
 ## Error policy
 
-Almost every failure inside the daemon calls `die()` (perror + `exit(1)`). This is intentional for PID 1: if cgroup mounting or the socket fails, there is nothing sensible to recover to. The rmdir path in `cgroup/cgroup.c` waits for `cgroup.events` to report `populated 0` via `poll(POLLPRI)` before walking the tree bottom-up, so `rmdir` never races a still-exiting process.
+Almost every failure inside the daemon calls `die()`, which writes `<3>initns: <msg>: <strerror>\n` to `/dev/kmsg` and then `exit(1)`s. For PID 1, `exit(1)` is a kernel panic — that's intentional: if cgroup mounting, the socket, or a command handler hits an error path, there is nothing sensible to limp along as. The kmsg write lands in the kernel ring buffer before the panic, so with pstore configured (`efi-pstore` or `ramoops`) the cause survives the reboot as `/sys/fs/pstore/dmesg-*`.
+
+The rmdir path in `cgroup/cgroup.c` waits for `cgroup.events` to report `populated 0` via `poll(POLLPRI)` before walking the tree bottom-up, so `rmdir` never races a still-exiting process.

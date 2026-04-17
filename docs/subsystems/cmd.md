@@ -11,7 +11,7 @@ Files:
 
 1. Copies the caller's `State` into its own TLS slot.
 2. Creates `AF_UNIX`/`SOCK_STREAM` socket, `unlink`s `/run/initns.sock`, `bind`s, `listen(5)`.
-3. Loops on `accept` → `cmd(cfd, cfd)` → `close(cfd)`. `EINTR` on accept is retried; any other error breaks out, `close`s the listen fd, and `unlink`s the socket path.
+3. Loops on `accept` → `cmd(cfd, cfd)` → `close(cfd)`. `EINTR` on accept is retried; any other accept error calls `die()` (kmsg write + `exit`, which is a kernel panic for PID 1 — a broken command channel is not a state worth limping along in).
 
 Only one connection is served at a time; there is no per-connection thread.
 
