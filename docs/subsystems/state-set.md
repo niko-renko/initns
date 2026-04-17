@@ -10,13 +10,14 @@ Files: `state/state.h`, `state/state.c`.
 typedef struct state {
     pthread_mutex_t lock;
     pid_t ctl;              // pid of the host shell on VT63, or 0 if none
+    pid_t container;        // pid of the currently running /sbin/init, or 0
     char *instance;         // name of the currently running container, "" if none
 } State;
 ```
 
 API:
 
-- `State *init_state(void)` — allocate, `pthread_mutex_init`, set `ctl=0`, `instance=""`. Called once from `main()`.
+- `State *init_state(void)` — allocate, `pthread_mutex_init`, set `ctl=0`, `container=0`, `instance=""`. Called once from `main()`.
 - `void set_state(State *s)` — install the State into the calling thread's TLS slot (`pthread_key_create` guarded by `pthread_once`).
 - `State *get_state(void)` — read the TLS slot.
 
@@ -25,6 +26,7 @@ Every thread spawned by the daemon (socket server, keyboard watcher, per-device 
 ### What the lock protects
 
 - `state->instance` (mutated in `cmd_run`, `cmd_stop`; read + written in `on_ctl`)
+- `state->container` (mutated in `cmd_run`, `cmd_stop`)
 - `state->ctl` (mutated in `start_ctl`, `stop_ctl`)
 
 The mutex is held across the write-to-client `ok`/`error` inside `cmd_run` for the same-instance unfreeze path, but released before `clone3` in the new-instance path so a long-running container setup does not block other commands.

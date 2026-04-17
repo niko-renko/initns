@@ -4,6 +4,7 @@
 typedef struct state {
     pthread_mutex_t lock;
     pid_t ctl;
+    pid_t container;
     char *instance;
 } State;
 

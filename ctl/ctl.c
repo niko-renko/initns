@@ -59,7 +59,7 @@ static void clone_pkill(int sid) {
     if (pid < 0)
         die("fork");
     if (pid > 0) {
-        if (waitpid(pid, NULL, 0) == -1 && errno != ECHILD)
+        if (waitpid(pid, NULL, 0) == -1)
             die("waitpid");
         return;
     }
@@ -73,8 +73,11 @@ static void clone_pkill(int sid) {
 void start_ctl(void) {
     State *state = get_state();
     pthread_mutex_lock(&state->lock);
-    if (state->ctl)
+    if (state->ctl) {
         clone_pkill(state->ctl);
+        if (waitpid(state->ctl, NULL, 0) == -1)
+            die("waitpid ctl");
+    }
     state->ctl = clone_shell();
     pthread_mutex_unlock(&state->lock);
 
@@ -85,8 +88,11 @@ void start_ctl(void) {
 void stop_ctl(void) {
     State *state = get_state();
     pthread_mutex_lock(&state->lock);
-    if (state->ctl)
+    if (state->ctl) {
         clone_pkill(state->ctl);
+        if (waitpid(state->ctl, NULL, 0) == -1)
+            die("waitpid ctl");
+    }
     state->ctl = 0;
     pthread_mutex_unlock(&state->lock);
 

@@ -15,6 +15,7 @@ State *init_state(void) {
     if (pthread_mutex_init(&state->lock, NULL) != 0)
         die("mutex_init");
     state->ctl = 0;
+    state->container = 0;
     state->instance = malloc(256);
     state->instance[0] = '\0';
     return state;

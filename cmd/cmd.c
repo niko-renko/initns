@@ -36,7 +36,7 @@ static void clone_tar(const char *tar, const char *dest) {
     if (pid < 0)
         die("fork");
     if (pid > 0) {
-        if (waitpid(pid, NULL, 0) == -1 && errno != ECHILD)
+        if (waitpid(pid, NULL, 0) == -1)
             die("waitpid");
         return;
     }
@@ -51,7 +51,7 @@ static void clone_rm(const char *path) {
     if (pid < 0)
         die("fork");
     if (pid > 0) {
-        if (waitpid(pid, NULL, 0) == -1 && errno != ECHILD)
+        if (waitpid(pid, NULL, 0) == -1)
             die("waitpid");
         return;
     }
@@ -60,7 +60,7 @@ static void clone_rm(const char *path) {
     die("execl rm");
 }
 
-static void clone_init(int cgroup, const char *name) {
+static pid_t clone_init(int cgroup, const char *name) {
     char rootfs[PATH_MAX];
     snprintf(rootfs, PATH_MAX, "%s/rootfs/%s", ROOT, name);
     char rootfsmnt[PATH_MAX];
@@ -76,7 +76,7 @@ static void clone_init(int cgroup, const char *name) {
     if (pid < 0)
         die("clone");
     if (pid > 0)
-        return;
+        return pid;
     clean_fds();
 
     if (mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL) < 0)
@@ -155,6 +155,9 @@ static void cmd_run(int out, char *name) {
     if (state->instance[0] != '\0') {
         sync();
         kill_cgroup(state->instance);
+        if (waitpid(state->container, NULL, 0) == -1)
+            die("waitpid container");
+        state->container = 0;
         rm_cgroup(state->instance);
     }
     strcpy(state->instance, name);
@@ -164,8 +167,12 @@ static void cmd_run(int out, char *name) {
     stop_ctl();
 
     int cgroup = new_cgroup(name);
-    clone_init(cgroup, name);
+    pid_t container = clone_init(cgroup, name);
     close(cgroup);
+
+    pthread_mutex_lock(&state->lock);
+    state->container = container;
+    pthread_mutex_unlock(&state->lock);
 }
 
 static void cmd_ls(int out, char *type) {
@@ -229,6 +236,9 @@ static void cmd_stop(int out, char *name) {
     }
     sync();
     kill_cgroup(state->instance);
+    if (waitpid(state->container, NULL, 0) == -1)
+        die("waitpid container");
+    state->container = 0;
     rm_cgroup(state->instance);
     state->instance[0] = '\0';
     pthread_mutex_unlock(&state->lock);

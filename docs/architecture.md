@@ -94,3 +94,17 @@ VT63 is outside the range most setups wire to a getty, so it can host an interac
 Almost every failure inside the daemon calls `die()`, which writes `<3>initns: <msg>: <strerror>\n` to `/dev/kmsg` and then `exit(1)`s. For PID 1, `exit(1)` is a kernel panic — that's intentional: if cgroup mounting, the socket, or a command handler hits an error path, there is nothing sensible to limp along as. The kmsg write lands in the kernel ring buffer before the panic, so with pstore configured (`efi-pstore` or `ramoops`) the cause survives the reboot as `/sys/fs/pstore/dmesg-*`.
 
 The rmdir path in `cgroup/cgroup.c` waits for `cgroup.events` to report `populated 0` via `poll(POLLPRI)` before walking the tree bottom-up, so `rmdir` never races a still-exiting process.
+
+## Child reaping
+
+Every child PID 1 forks is reaped at the site that forked it — there is no generic `SIGCHLD` handler. The rule: whoever knows the pid does the `waitpid`.
+
+- `clone_tar`, `clone_rm` (in `cmd/cmd.c`) and `clone_pkill` (in `ctl/ctl.c`) fork + `waitpid(pid, NULL, 0)` inline. Short-lived, one call site.
+- **VT63 bash** — `state->ctl` holds its pid. Both `start_ctl` (preempt path) and `stop_ctl` `waitpid(state->ctl, NULL, 0)` after `clone_pkill` lands the SIGKILL.
+- **Container `/sbin/init`** — `clone_init` returns the pid; `cmd_run` stores it in `state->container`. After `kill_cgroup`, both `cmd_run` (preempt path) and `cmd_stop` `waitpid(state->container, NULL, 0)` before `rm_cgroup`.
+
+Because every wait targets a specific pid and there are no concurrent reapers, `waitpid` never returns `ECHILD` under normal flow — any `ECHILD` is a real bug and `die()`s.
+
+**Known leak:** descendants of the VT63 bash that outlive bash. `clone_pkill` SIGKILLs the whole session (`pkill -9 -s <sid>`), so they do die, but their zombies reparent to PID 1 and nobody collects them. A user who backgrounds `sleep 1000` in their host shell and then lets the shell exit will leave one zombie per backgrounded process. The tradeoff is explicit: accept a small, bounded leak in exchange for not installing a generic reaper that would race every explicit wait. Processes inside the container don't leak — they live in their own PID namespace, and when its PID 1 (`/sbin/init`) dies the kernel tears the namespace down.
+
+Every `fork`/`clone3` child also has a `die("execl …")` immediately after its `execl`, so a missing binary (`/bin/tar`, `/bin/rm`, `/bin/pkill`, `/bin/bash`, `/sbin/init`) terminates the child with a kmsg line rather than silently falling back into the parent's code path.

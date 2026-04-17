@@ -31,24 +31,27 @@ Note: the current dispatch writes `syntax` after handling too if `arg` is missin
 
 ### `cmd_new(out, name, image)` — `cmd.c:94`
 - Rejects if `name` already in `/var/lib/initns/instances` **or** the image file does not exist at `/var/lib/initns/images/<image>`.
-- `file_add` the name, `mkdir` the rootfs dir, fork+`execl("/bin/tar", ..., "--strip-components=1", "-C", rootfs)`, `sync`.
+- `file_add` the name, `mkdir` the rootfs dir, `clone_tar` (fork+`execl("/bin/tar", ..., "--strip-components=1", "-C", rootfs)`), `sync`.
 
 ### `cmd_rm(out, name)` — `cmd.c:114`
 - Rejects if not present in the instances file.
-- fork+`execl("/bin/rm", "-rf", rootfs)`, then `file_remove`, then `sync`.
+- `clone_rm` (fork+`execl("/bin/rm", "-rf", rootfs)`), then `file_remove`, then `sync`.
 - Does **not** check whether the instance is currently running. Callers are expected to `stop` first.
+
+Both `clone_tar` and `clone_rm` block on `waitpid(pid, NULL, 0)` for the forked helper — any failure (including `ECHILD`) `die()`s, since no other reaper exists to race with them. The child exec paths end in `die("execl tar")` / `die("execl rm")` so a missing binary produces a kmsg line instead of silently continuing in the caller's control flow.
 
 ### `cmd_run(out, name)` — `cmd.c:131`
 Core of the system. Under `state->lock`:
 
 - If `name == state->instance`: unfreeze its cgroup, release lock, reply `ok`, `stop_ctl()`. Return. (This is the "resume from VT63" path.)
-- Otherwise, if `state->instance` is non-empty: `sync`, `kill_cgroup`, `rm_cgroup` on the *previous* instance.
+- Otherwise, if `state->instance` is non-empty: `sync`, `kill_cgroup`, `waitpid(state->container, …)` to reap the previous container's `/sbin/init`, then `rm_cgroup`.
 - Set `state->instance = name`, release lock.
 - Reply `ok`, then `stop_ctl()` (returns console to VT1 if a shell was up).
 - `new_cgroup(name)` → returns an `O_DIRECTORY` fd into `/sys/fs/cgroup/initns/<name>`.
-- `clone_init(cgroup_fd, name)` — see below.
+- `clone_init(cgroup_fd, name)` — see below; its return value is the new container's pid.
+- Re-acquire the lock, store the pid in `state->container`, release.
 
-### `clone_init(cgroup, name)` — `cmd.c:60`
+### `clone_init(cgroup, name) -> pid_t` — `cmd.c:60`
 Uses `syscall(SYS_clone3, &args, sizeof(args))` with:
 ```
 flags       = CLONE_INTO_CGROUP | CLONE_NEWPID | CLONE_NEWNS | CLONE_NEWCGROUP
@@ -61,12 +64,14 @@ Child path:
 2. `mount(rootfs, rootfs, NULL, MS_BIND|MS_REC, NULL)` — `pivot_root` requires the new root to itself be a mount point.
 3. `syscall(SYS_pivot_root, rootfs, rootfs/mnt)` — old root ends up at `/mnt`.
 4. `umount2("/mnt", MNT_DETACH)` — lazy-unmount the old root so it can be reaped later.
-5. `execl("/sbin/init", "init", NULL)`.
+5. `execl("/sbin/init", "init", NULL)`; if exec returns, `die("execl init")`.
+
+A failed `clone3` in the parent calls `die("clone")`. The parent returns the child pid up to `cmd_run`, which stashes it in `state->container` so that `cmd_stop` / the preempt branch of `cmd_run` can reap it with `waitpid(state->container, …)` after `kill_cgroup`.
 
 No user-namespace remap, no mount of `/proc` / `/sys` / `/dev` — the image is expected to contain whatever the contained `/sbin/init` needs, or to mount those itself.
 
 ### `cmd_stop(out, name)` — `cmd.c:210`
-Under `state->lock`, rejects unless `name == state->instance`. Then `sync`, `kill_cgroup`, `rm_cgroup`, clear `state->instance`. Reply `ok`.
+Under `state->lock`, rejects unless `name == state->instance`. Then `sync`, `kill_cgroup`, `waitpid(state->container, …)`, clear `state->container`, `rm_cgroup`, clear `state->instance`. Reply `ok`.
 
 ### `cmd_ls(out, "image" | "instance")` — `cmd.c:167`
 - `image`: `opendir("/var/lib/initns/images")`, write each non-dot entry, `\n`-separated (no trailing newline between last entry and the `\n\n` framing).

@@ -36,7 +36,7 @@ There is no hotkey for the reverse direction; the host exits VT63 by running `in
 
 `start_ctl()` — called from the keyboard thread:
 
-1. Under `state->lock`: if `state->ctl` is non-zero (a previous shell is still around), `clone_pkill(state->ctl)` — fork+`execl("/bin/pkill", "-9", "-s", <sid>)` to kill everything in that session. Then spawn a new shell via `clone_shell()` and store its pid in `state->ctl`.
+1. Under `state->lock`: if `state->ctl` is non-zero (a previous shell is still around), `clone_pkill(state->ctl)` — fork+`execl("/bin/pkill", "-9", "-s", <sid>)` to kill everything in that session — then `waitpid(state->ctl, …)` to reap the dead shell. Spawn a new shell via `clone_shell()` and store its pid in `state->ctl`.
 2. `vt_mode(VT_PROCESS)` on `/dev/tty63` — take over VT switching so the kernel won't auto-leave.
 3. `vt_switch(63)` — make VT63 active.
 
@@ -48,13 +48,17 @@ There is no hotkey for the reverse direction; the host exits VT63 by running `in
 4. `ioctl(KDSETMODE, KD_TEXT)` — make sure the VT is in text (not graphics) mode.
 5. `ioctl(KDSKBMODE, K_UNICODE)` — keyboard in Unicode mode.
 6. `setenv("PATH", "/bin:/usr/bin")`, `setenv("HOME", "/root")`.
-7. `execl("/bin/bash", "bash", NULL)`.
+7. `execl("/bin/bash", "bash", NULL)`; if it returns, `die("execl bash")`.
+
+`clone_pkill()` forks, `waitpid`s the pkill helper, and in the child `execl`s `/bin/pkill`; exec failure hits `die("execl pkill")`. Because no generic reaper exists, any `waitpid` failure `die()`s — an `ECHILD` here would be a real bug.
 
 `stop_ctl()`:
 
-1. Under `state->lock`: if `state->ctl` is set, `clone_pkill(state->ctl)`; clear it.
+1. Under `state->lock`: if `state->ctl` is set, `clone_pkill(state->ctl)` then `waitpid(state->ctl, …)` to reap the shell; clear `state->ctl`.
 2. `vt_mode(VT_AUTO)` — return VT control to the kernel.
 3. `vt_switch(1)` — back to the primary console.
+
+Any processes the VT63 bash spawned that outlive it get SIGKILLed by the session-wide `pkill` in step 1, but their zombies reparent to PID 1 and nothing reaps them (see `@../architecture.md` → "Child reaping"). That leak is the deliberate tradeoff for not running a generic `SIGCHLD` reaper.
 
 ## `ctl/vt.c` — VT ioctls
 
