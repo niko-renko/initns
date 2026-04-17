@@ -42,6 +42,7 @@ static void clone_tar(const char *tar, const char *dest) {
     clean_fds();
     execl("/bin/tar", "tar", "xf", tar, "--strip-components=1", "-C", dest,
           (char *)NULL);
+    die("execl tar");
 }
 
 static void clone_rm(const char *path) {
@@ -55,6 +56,7 @@ static void clone_rm(const char *path) {
             return;
     clean_fds();
     execl("/bin/rm", "rm", "-rf", path, (char *)NULL);
+    die("execl rm");
 }
 
 static void clone_init(int cgroup, const char *name) {
@@ -71,7 +73,7 @@ static void clone_init(int cgroup, const char *name) {
     args.cgroup = cgroup;
     pid_t pid = syscall(SYS_clone3, &args, sizeof(args));
     if (pid < 0)
-        die("fork");
+        die("clone");
     if (pid > 0)
         return;
     clean_fds();
@@ -89,6 +91,7 @@ static void clone_init(int cgroup, const char *name) {
         die("umount2");
 
     execl("/sbin/init", "init", (char *)NULL);
+    die("execl init");
 }
 
 static void cmd_new(int out, char *name, char *image_name) {
@@ -149,7 +152,7 @@ static void cmd_run(int out, char *name) {
     }
     // Another instance is running
     if (state->instance[0] != '\0') {
-    	sync();
+        sync();
         kill_cgroup(state->instance);
         rm_cgroup(state->instance);
     }
@@ -220,8 +223,8 @@ static void cmd_stop(int out, char *name) {
     pthread_mutex_lock(&state->lock);
     if (strcmp(name, state->instance) != 0) {
         write(out, ERR, strlen(ERR));
-    	pthread_mutex_unlock(&state->lock);
-	return;
+        pthread_mutex_unlock(&state->lock);
+        return;
     }
     sync();
     kill_cgroup(state->instance);
@@ -280,4 +283,3 @@ void cmd(int in, int out) {
     while ((n = read(in, buf, sizeof(buf) - 1)) > 0)
         accept_cmd(out, buf, n);
 }
-
