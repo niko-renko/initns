@@ -42,10 +42,11 @@ initns CLI ──▶ /run/initns.sock ──▶ cmd/sock_cmd.c: accept()
                                            ├─ state->lock
                                            ├─ if same instance running: unfreeze cgroup, return
                                            ├─ if different: kill + rm its cgroup
-                                           ├─ state->instance = name
-                                           ├─ stop_ctl() (leave VT63 shell, back to VT1)
                                            ├─ new_cgroup(name)  → /sys/fs/cgroup/initns/<name>
-                                           └─ clone3(CLONE_INTO_CGROUP|NEWPID|NEWNS|NEWCGROUP)
+                                           ├─ clone3(CLONE_INTO_CGROUP|NEWPID|NEWNS|NEWCGROUP)
+                                           ├─ state->instance = name, state->container = pid
+                                           ├─ unlock
+                                           └─ stop_ctl() (leave VT63 shell, back to VT1)
                                                    │
                                                    └─ child: mount private,
                                                              bind-mount rootfs on itself,

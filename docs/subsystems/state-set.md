@@ -29,7 +29,7 @@ Every thread spawned by the daemon (socket server, keyboard watcher) calls `set_
 - `state->container` (mutated in `cmd_run`, `cmd_stop`)
 - `state->ctl` (mutated in `start_ctl`, `stop_ctl`)
 
-The mutex is held across the write-to-client `ok`/`error` inside `cmd_run` for the same-instance unfreeze path, but released before `clone3` in the new-instance path so a long-running container setup does not block other commands.
+The mutex is held across the write-to-client `ok`/`error` inside `cmd_run`'s same-instance unfreeze path, and across `new_cgroup` + `clone3` in the new-instance path — so `state->instance` and the cgroup it names are always consistent to concurrent observers (e.g. a `Ctrl+Alt+J` hotkey trying to freeze it). `clone3` returns as soon as the child is forked, so the hold stays short.
 
 ## `set/` — append/remove/contains for line-oriented files
 

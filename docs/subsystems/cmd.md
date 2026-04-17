@@ -21,11 +21,8 @@ Only one connection is served at a time; there is no per-connection thread.
 
 1. Null-terminates the buffer; trims the first `\n`.
 2. `strtok(" ")` extracts `cmd`, `arg`, `arg2`.
-3. Matches one of `new` / `rm` / `run` / `stop` / `ls` and calls the handler.
-4. If no match or missing required arg, writes `syntax\n`.
-5. Always appends `\n\n` and `fsync`es.
-
-Note: the current dispatch writes `syntax` after handling too if `arg` is missing for commands other than `new`, because it falls through the `goto syntax` path only when `valid == 0`. Handlers write their own `ok`/`error` before the trailing `\n\n`.
+3. A flat `if`/`else if` chain dispatches to one of `new` / `rm` / `run` / `stop` / `ls`. Missing required args or an unknown verb falls through to the terminal `else` and writes `syntax\n`.
+4. Always appends `\n\n` and `fsync`es. Handlers write their own `ok`/`error` before the framing.
 
 ## Handlers
 
@@ -45,11 +42,10 @@ Core of the system. Under `state->lock`:
 
 - If `name == state->instance`: unfreeze its cgroup, release lock, reply `ok`, `stop_ctl()`. Return. (This is the "resume from VT63" path.)
 - Otherwise, if `state->instance` is non-empty: `sync`, `kill_cgroup`, `waitpid(state->container, …)` to reap the previous container's `/sbin/init`, then `rm_cgroup`.
-- Set `state->instance = name`, release lock.
-- Reply `ok`, then `stop_ctl()` (returns console to VT1 if a shell was up).
-- `new_cgroup(name)` → returns an `O_DIRECTORY` fd into `/sys/fs/cgroup/initns/<name>`.
-- `clone_init(cgroup_fd, name)` — see below; its return value is the new container's pid.
-- Re-acquire the lock, store the pid in `state->container`, release.
+- Still under the lock: `new_cgroup(name)` → returns an `O_DIRECTORY` fd into `/sys/fs/cgroup/initns/<name>`; then `clone_init(cgroup_fd, name)` to fork the container. Store the returned pid in `state->container`, set `state->instance = name`.
+- Release the lock. Reply `ok`, then `stop_ctl()` (returns console to VT1 if a shell was up).
+
+The cgroup creation and `clone3` are done under the lock so `state->instance` never names a cgroup that doesn't yet exist — otherwise a `Ctrl+Alt+J` fire in that window would call `set_frozen_cgroup` on a missing path and `die()` PID 1. `clone3` returns to the parent as soon as the child is forked (the child's mount/pivot/exec work happens concurrently), so the lock hold stays short.
 
 ### `clone_init(cgroup, name) -> pid_t` — `cmd.c:60`
 Uses `syscall(SYS_clone3, &args, sizeof(args))` with:
