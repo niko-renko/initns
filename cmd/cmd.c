@@ -157,19 +157,16 @@ static void cmd_run(int out, char *name) {
         state->container = 0;
         rm_cgroup(state->instance);
     }
-    strcpy(state->instance, name);
-    pthread_mutex_unlock(&state->lock);
-
-    write(out, OK, strlen(OK));
-    stop_ctl();
 
     int cgroup = new_cgroup(name);
     pid_t container = clone_init(cgroup, name);
     close(cgroup);
-
-    pthread_mutex_lock(&state->lock);
+    strcpy(state->instance, name);
     state->container = container;
     pthread_mutex_unlock(&state->lock);
+
+    write(out, OK, strlen(OK));
+    stop_ctl();
 }
 
 static void cmd_ls(int out, char *type) {
@@ -247,37 +244,24 @@ static void accept_cmd(int out, char *line, int n) {
     char *nl = strchr(line, '\n');
     if (nl)
         *nl = '\0';
+
     char *cmd = strtok(line, " ");
     char *arg = strtok(NULL, " ");
     char *arg2 = strtok(NULL, " ");
-    int valid = 0;
 
     if (!cmd || !arg)
-        goto syntax;
-
-    if (strcmp(cmd, "new") == 0 && arg2) {
+        write(out, SYNTAX, strlen(SYNTAX));
+    else if (strcmp(cmd, "new") == 0 && arg2)
         cmd_new(out, arg, arg2);
-        valid = 1;
-    }
-    if (strcmp(cmd, "rm") == 0) {
+    else if (strcmp(cmd, "rm") == 0)
         cmd_rm(out, arg);
-        valid = 1;
-    }
-    if (strcmp(cmd, "run") == 0) {
+    else if (strcmp(cmd, "run") == 0)
         cmd_run(out, arg);
-        valid = 1;
-    }
-    if (strcmp(cmd, "stop") == 0) {
+    else if (strcmp(cmd, "stop") == 0)
         cmd_stop(out, arg);
-        valid = 1;
-    }
-    if (strcmp(cmd, "ls") == 0) {
+    else if (strcmp(cmd, "ls") == 0)
         cmd_ls(out, arg);
-        valid = 1;
-    }
-
-syntax:
-    if (!valid)
+    else
         write(out, SYNTAX, strlen(SYNTAX));
 
     write(out, "\n\n", 2);
