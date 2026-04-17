@@ -2,28 +2,47 @@
 
 These two subsystems are paired: the keyboard layer detects `Ctrl+Alt+J` and calls into the control layer, which spawns a bash shell on VT63.
 
-## `kbd/kbd.c` — device discovery
+## `kbd/kbd.c` — single-thread hotkey detector
 
-`spawn_kbd()` launches a detached thread running `kbd()`:
+`spawn_kbd()` launches one thread running `kbd()`. That thread owns everything input-related: hotplug, per-device event streams, chord detection. No sub-threads, no per-device state handed across threads.
 
-1. `inotify_init1(IN_NONBLOCK)` + `inotify_add_watch("/dev/input", IN_CREATE)`.
-2. `scan_existing_devices()` — iterate current `/dev/input/event*` so we pick up keyboards that existed before the daemon started.
-3. Loop: read inotify events; for each new `event*` node, call `on_device_added(path)`.
+Startup (in order):
 
-`is_kbd(path)`: opens the device and uses `ioctl(fd, EVIOCGBIT(0, ...))` and `EVIOCGBIT(EV_KEY, ...)` to check the device exposes `EV_KEY` + `EV_SYN` and counts how many key codes in `1..255` are supported. If more than 15, treat it as a keyboard. This rejects mice, touchpads, and most non-keyboard `event*` devices.
+1. `epoll_create1(0)`.
+2. `inotify_init1(0)` (blocking — epoll drives it) + `inotify_add_watch("/dev/input", IN_CREATE)`. Added to epoll *before* the initial scan, so a device created mid-scan isn't lost.
+3. `scan_existing_devices()` — iterate current `/dev/input/event*` and call `add_device()` on each.
 
-For each accepted device, `spawn_seq_listener(path)` starts a thread (see below).
+Main loop: `epoll_wait(epfd, evs, 16, -1)` blocks until inotify or some evdev fd is readable. Zero CPU at idle. A sentinel pointer (`&inotify_tag`) in `epoll_data.ptr` distinguishes the inotify fd from keyboard fds; keyboard fds store their `kbd_dev *`.
 
-Non-blocking reads on the inotify fd get `EAGAIN` — the loop sleeps `usleep(200000)` (200 ms) and retries.
+### Device classification
 
-## `kbd/seq_listener.c` — hotkey detection
+`classify_kbd(fd)`: takes an already-open fd and uses `ioctl(EVIOCGBIT(0, …))` + `ioctl(EVIOCGBIT(EV_KEY, …))` to check the device exposes `EV_KEY` + `EV_SYN` and supports more than 15 distinct key codes in `1..255`. That threshold rejects mice, touchpads, power buttons, and most non-keyboard `event*` devices.
 
-One thread per keyboard. `spawn_seq_listener` allocates a `seq_listener_args` struct on the heap, hands ownership to the worker thread via `pthread_create`, and `pthread_detach`s the thread (nobody joins). Inside the worker, the device path is copied to a stack buffer and the heap struct is `free`d before the event loop starts, so no dangling pointer can outlive the thread.
+`add_device(path)`:
 
-The worker opens the `event*` file `O_RDONLY | O_NONBLOCK` and reads a stream of `struct input_event`:
+- Deduplicates via `find_device(path)` — scan vs inotify can both fire for the same node.
+- `open(path, O_RDONLY)` (blocking), then `classify_kbd`; on mismatch, close and return.
+- `query_mods(fd)` via `ioctl(EVIOCGKEY, …)` seeds the device's modifier bitmap from the kernel's *current* held-key state, so a keyboard attached (or the daemon started) with Ctrl already held doesn't start at zero.
+- Register with epoll and prepend to the `devices` linked list.
 
-- Tracks the press/release state of `KEY_LEFTCTRL`/`KEY_RIGHTCTRL` and `KEY_LEFTALT`/`KEY_RIGHTALT`.
-- When `KEY_J` arrives with `value == 1` (press) *and* both Ctrl and Alt are currently held, calls `on_ctl()`.
+`remove_device(dev)` is called on read error or EOF: `epoll_ctl(DEL)`, `close(fd)`, unlink, `free`. Inotify's `IN_CREATE` handles replug.
+
+### Chord detection
+
+Each `kbd_dev` carries a 4-bit mask `mods` of modifiers currently held *on that device*:
+
+```
+MOD_LCTRL 0x1   MOD_RCTRL 0x2   MOD_LALT 0x4   MOD_RALT 0x8
+MOD_CTRL = LCTRL|RCTRL          MOD_ALT  = LALT|RALT
+```
+
+`handle_evdev(dev)`:
+
+- Read one `struct input_event` (blocking; epoll guarantees data is ready).
+- `EV_SYN` + `SYN_DROPPED` (kernel buffer overflow) → re-query via `EVIOCGKEY` to rebuild `dev->mods`.
+- `EV_KEY` on a modifier: set or clear the corresponding bit based on `ev.value` (0 = release, non-zero = press/autorepeat). Left/right are tracked independently, so releasing RightCtrl while LeftCtrl is still held leaves `MOD_CTRL` set.
+- `EV_KEY` on `KEY_J` with `value == 1`: compute `global_mods()` as the OR of every `dev->mods` in the list. If `(global & MOD_CTRL) && (global & MOD_ALT)`, fire `on_ctl()`.
+- Cross-keyboard chords (Ctrl on keyboard A, Alt+J on keyboard B) complete because `global_mods` is device-aggregate. A 200 ms `CLOCK_MONOTONIC` debounce (`last_fire_ns`) collapses duplicate fires when two keyboards send the chord simultaneously.
 
 `on_ctl()`:
 
@@ -31,6 +50,10 @@ The worker opens the `event*` file `O_RDONLY | O_NONBLOCK` and reads a stream of
 2. Under `state->lock`, if there is a running instance, `set_frozen_cgroup(state->instance, 1)` — pause it so the host shell gets exclusive access to the console.
 
 There is no hotkey for the reverse direction; the host exits VT63 by running `initns run <instance>` or `initns stop <instance>`.
+
+### Why a single thread
+
+The previous design spawned one pthread per keyboard with a nonblocking `read` loop per thread — that pegged one CPU per keyboard at idle and could never see a chord split across two keyboards. The single-thread epoll design makes CPU at idle ~0%, gives one shared modifier state, and removes a whole class of per-thread lifetime bugs.
 
 ## `ctl/ctl.c` — spawning the shell
 

@@ -24,11 +24,10 @@ Both link the same set of common modules (`set/`, `cmd/`, `kbd/`, `state/`, `cgr
 
 stdout/stderr are whatever the kernel handed PID 1 (usually `/dev/console`). Diagnostics from `die()` go to `/dev/kmsg` (not stderr) so they land in the kernel ring buffer and can be recovered via pstore across a panic. See `@build-and-run.md` for the logging setup.
 
-Three long-running thread classes exist:
+Two long-running thread classes exist:
 
 - **Socket server** (`cmd/sock_cmd.c`) — accepts connections on `/run/initns.sock`, runs `cmd()` per connection.
-- **Keyboard watcher** (`kbd/kbd.c`) — uses `inotify` on `/dev/input/` to discover keyboards as they appear, and starts a per-device listener thread (`kbd/seq_listener.c`) for each.
-- **Per-keyboard sequence listeners** — one thread per keyboard device, watching for the `Ctrl+Alt+J` chord.
+- **Keyboard watcher** (`kbd/kbd.c`) — single thread, `epoll` over an `inotify` watch on `/dev/input/` plus every keyboard `event*` fd. Handles hotplug, tracks modifier state per device, and fires `Ctrl+Alt+J` when any keyboard (or combination of keyboards) completes the chord.
 
 All threads are fire-and-forget (never joined). They share the single `State` through pthread TLS; its mutex protects `state->instance` (the currently running container) and `state->ctl` (the PID of the host shell on VT63, if any).
 
@@ -57,10 +56,10 @@ initns CLI ──▶ /run/initns.sock ──▶ cmd/sock_cmd.c: accept()
 ## Data flow: the control-shell hotkey
 
 ```
-keyboard event (Ctrl+Alt+J press)
+keyboard event (Ctrl+Alt+J press, possibly split across devices)
         │
         ▼
-kbd/seq_listener.c: on_ctl()
+kbd/kbd.c: on_ctl()
         │
         ├─ ctl/ctl.c: start_ctl()
         │     ├─ if a prior shell exists, pkill -9 -s <sid>

@@ -25,7 +25,7 @@ Makefile           two targets: init, initns
 
 cmd/               socket server + command handlers + container bring-up
 cgroup/            cgroup v2 mount/create/freeze/kill/remove
-kbd/               inotify on /dev/input + Ctrl+Alt+J listener per keyboard
+kbd/               single-thread epoll over inotify + all keyboard fds; Ctrl+Alt+J detector
 ctl/               bash shell on VT63, VT switching
 state/             pthread-TLS shared State (lock, ctl pid, current instance)
 set/               line-oriented add/remove/contains for /var/lib/initns/instances

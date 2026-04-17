@@ -21,7 +21,7 @@ API:
 - `void set_state(State *s)` — install the State into the calling thread's TLS slot (`pthread_key_create` guarded by `pthread_once`).
 - `State *get_state(void)` — read the TLS slot.
 
-Every thread spawned by the daemon (socket server, keyboard watcher, per-device listeners) calls `set_state(arg)` at its top, so `get_state()` works anywhere. The struct is shared — TLS holds a pointer to the same `State`, not per-thread copies — and all mutation is done under `state->lock`.
+Every thread spawned by the daemon (socket server, keyboard watcher) calls `set_state(arg)` at its top, so `get_state()` works anywhere. The struct is shared — TLS holds a pointer to the same `State`, not per-thread copies — and all mutation is done under `state->lock`.
 
 ### What the lock protects
 

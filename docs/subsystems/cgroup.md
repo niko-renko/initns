@@ -25,7 +25,7 @@ Any failure along this path calls `die()`. With the populated=0 wait in front, `
 
 ### `set_frozen_cgroup(const char *name, int frozen)`
 Writes `"1"` or `"0"` to `/sys/fs/cgroup/initns/<name>/cgroup.freeze`. Used to:
-- Freeze the running container when the user presses `Ctrl+Alt+J` (`kbd/seq_listener.c` → `on_ctl()`).
+- Freeze the running container when the user presses `Ctrl+Alt+J` (`kbd/kbd.c` → `on_ctl()`).
 - Unfreeze when the user runs the same instance again from the host shell (`cmd_run` same-instance branch).
 
 ### `kill_cgroup(const char *name)`
