@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -57,11 +58,11 @@ static void clone_pkill(int sid) {
     pid_t pid = fork();
     if (pid < 0)
         die("fork");
-    if (pid > 0)
-        if (waitpid(pid, NULL, 0) == -1)
+    if (pid > 0) {
+        if (waitpid(pid, NULL, 0) == -1 && errno != ECHILD)
             die("waitpid");
-        else
-            return;
+        return;
+    }
     clean_fds();
     char ssid[12];
     sprintf(ssid, "%d", sid);
