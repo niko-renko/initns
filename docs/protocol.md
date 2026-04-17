@@ -27,6 +27,7 @@ For `ls`, the response body is the listing itself (newline-separated), terminate
 | Command              | Args                   | Effect |
 |---                   |---                     |---|
 | `new <name> <image>` | name, image filename   | Reject if name already exists or image file is missing. Otherwise add to instances file, mkdir rootfs, extract tar, `sync`. |
+| `seed <src-dir> <image>` | source directory, image filename | Reject if the target image already exists or `<src-dir>` is missing / not a directory. Otherwise tar the source with `--one-file-system` into `/var/lib/initns/images/<image>`, `sync`. Designed for "snapshot this mounted filesystem as-is" — point it at `/`, a loop-mounted partition, a `pacstrap`ped dir, etc. Submounts on different filesystems (procfs, sysfs, devtmpfs, tmpfs, a separate `/home`, `/boot/efi`) are recorded as empty mountpoint directories. |
 | `commit <name> <image>` | name, image filename | Reject if the instance does not exist or the target image file already exists. Otherwise `sync`, tar the rootfs into `/var/lib/initns/images/<image>`, `sync`. Relies on the VT63 freeze invariant (see `@subsystems/cmd.md`) — the caller reached the socket through the host shell, so the container is already frozen. |
 | `rm <name>`          | name                   | Reject if unknown. `rm -rf` the rootfs, drop from instances file, `sync`. Does *not* check if running. |
 | `run <name>`         | name                   | Reject if unknown. If `state->instance == name`: just unfreeze. If another is running: kill + rm its cgroup first. Then `stop_ctl()`, create cgroup, `clone3` into it, child execs `/sbin/init`. |
@@ -47,6 +48,9 @@ The socket server handles one connection at a time (`accept` → `cmd` → `clos
 $ bin/initns ls image
 alpine.tar.gz
 debian.tar.gz
+
+$ bin/initns seed /mnt custom.tar       # snapshot a mounted fs into an image
+ok
 
 $ bin/initns new sandbox alpine.tar.gz
 ok

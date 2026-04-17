@@ -40,8 +40,9 @@ static void clone_tar_extract(const char *tar, const char *dest) {
             die("waitpid");
         return;
     }
-    execl("/bin/tar", "tar", "xf", tar, "--strip-components=1", "-C", dest,
-          (char *)NULL);
+    execl("/bin/tar", "tar", "xf", tar, "--strip-components=1",
+          "--numeric-owner", "--xattrs", "--xattrs-include=*", "--acls", "-C",
+          dest, (char *)NULL);
     die("execl tar");
 }
 
@@ -54,7 +55,23 @@ static void clone_tar_create(const char *image, const char *src) {
             die("waitpid");
         return;
     }
-    execl("/bin/tar", "tar", "cf", image, "-C", src, ".", (char *)NULL);
+    execl("/bin/tar", "tar", "cf", image, "--numeric-owner", "--xattrs",
+          "--acls", "-C", src, ".", (char *)NULL);
+    die("execl tar");
+}
+
+static void clone_tar_create_onefs(const char *image, const char *src) {
+    pid_t pid = fork();
+    if (pid < 0)
+        die("fork");
+    if (pid > 0) {
+        if (waitpid(pid, NULL, 0) == -1)
+            die("waitpid");
+        return;
+    }
+    execl("/bin/tar", "tar", "cf", image, "--one-file-system",
+          "--numeric-owner", "--xattrs", "--acls", "-C", src, ".",
+          (char *)NULL);
     die("execl tar");
 }
 
@@ -139,6 +156,22 @@ static void cmd_commit(int out, char *name, char *image_name) {
     }
 
     clone_tar_create(image, rootfs);
+    sync();
+    write(out, OK, strlen(OK));
+}
+
+static void cmd_seed(int out, char *source_dir, char *image_name) {
+    char image[PATH_MAX];
+    snprintf(image, PATH_MAX, "%s/images/%s", ROOT, image_name);
+
+    struct stat st;
+    if (access(image, F_OK) == 0 || stat(source_dir, &st) < 0 ||
+        !S_ISDIR(st.st_mode)) {
+        write(out, ERR, strlen(ERR));
+        return;
+    }
+
+    clone_tar_create_onefs(image, source_dir);
     sync();
     write(out, OK, strlen(OK));
 }
@@ -273,11 +306,12 @@ static void cmd_stop(int out, char *name) {
 static void cmd_help(int out) {
     static const char help[] =
         "new <name> <image>      create instance from image\n"
+        "seed <src> <image>      create image from one filesystem tree\n"
         "commit <name> <image>   snapshot instance to image\n"
         "run <name>              start or resume instance\n"
         "stop <name>             kill instance\n"
         "rm <name>               delete instance\n"
-        "ls image|instance       list images or instances\n"
+        "ls image | instance     list images or instances\n"
         "help                    this help";
     write(out, help, sizeof(help) - 1);
 }
@@ -302,6 +336,8 @@ static void accept_cmd(int out, char *line, int n) {
         cmd_new(out, arg, arg2);
     else if (strcmp(cmd, "commit") == 0 && arg2)
         cmd_commit(out, arg, arg2);
+    else if (strcmp(cmd, "seed") == 0 && arg2)
+        cmd_seed(out, arg, arg2);
     else if (strcmp(cmd, "rm") == 0)
         cmd_rm(out, arg);
     else if (strcmp(cmd, "run") == 0)

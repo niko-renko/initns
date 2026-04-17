@@ -33,7 +33,7 @@ Container images are plain tarballs placed under `/var/lib/initns/images/<name>.
 
 ## Lifecycle
 
-1. Place an image at `/var/lib/initns/images/<image>.tar.gz`.
+1. Place an image at `/var/lib/initns/images/<image>.tar.gz` — either a `./`-prefixed tar you produce yourself (see `@protocol.md` for the format), or `initns seed <src-dir> <image>` on the current host to snapshot a mounted filesystem as-is via `tar --one-file-system`.
 2. `initns new <instance> <image>` — creates `/var/lib/initns/rootfs/<instance>/` by extracting the tar with `--strip-components=1` and records the name in `/var/lib/initns/instances`.
 3. `initns run <instance>` — starts it via `clone3` into a fresh cgroup + namespaces and `execl("/sbin/init")`. If the same instance is already running it is unfrozen; if a *different* instance is running, it is killed and its cgroup removed.
 4. Press `Ctrl+Alt+J` at any keyboard: the running container is frozen and a bash shell is spawned on VT63 for host access. The kernel switches the console to VT63.
