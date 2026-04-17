@@ -270,6 +270,18 @@ static void cmd_stop(int out, char *name) {
     write(out, OK, strlen(OK));
 }
 
+static void cmd_help(int out) {
+    static const char help[] =
+        "new <name> <image>      create instance from image\n"
+        "commit <name> <image>   snapshot instance to image\n"
+        "run <name>              start or resume instance\n"
+        "stop <name>             kill instance\n"
+        "rm <name>               delete instance\n"
+        "ls image|instance       list images or instances\n"
+        "help                    this help";
+    write(out, help, sizeof(help) - 1);
+}
+
 static void accept_cmd(int out, char *line, int n) {
     line[n] = '\0';
     char *nl = strchr(line, '\n');
@@ -280,7 +292,11 @@ static void accept_cmd(int out, char *line, int n) {
     char *arg = strtok(NULL, " ");
     char *arg2 = strtok(NULL, " ");
 
-    if (!cmd || !arg)
+    if (!cmd)
+        write(out, SYNTAX, strlen(SYNTAX));
+    else if (strcmp(cmd, "help") == 0)
+        cmd_help(out);
+    else if (!arg)
         write(out, SYNTAX, strlen(SYNTAX));
     else if (strcmp(cmd, "new") == 0 && arg2)
         cmd_new(out, arg, arg2);

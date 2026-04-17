@@ -21,7 +21,7 @@ Only one connection is served at a time; there is no per-connection thread.
 
 1. Null-terminates the buffer; trims the first `\n`.
 2. `strtok(" ")` extracts `cmd`, `arg`, `arg2`.
-3. A flat `if`/`else if` chain dispatches to one of `new` / `rm` / `run` / `stop` / `ls`. Missing required args or an unknown verb falls through to the terminal `else` and writes `syntax\n`.
+3. A flat `if`/`else if` chain dispatches to one of `new` / `commit` / `rm` / `run` / `stop` / `ls` / `help`. `help` is checked first among one-word verbs (it takes no args); then the `!arg` guard rejects everything else that lacks an argument. Missing required args or an unknown verb falls through to the terminal `else` and writes `syntax\n`.
 4. Always appends `\n\n` and `fsync`es. Handlers write their own `ok`/`error` before the framing.
 
 ## Handlers
@@ -78,6 +78,9 @@ Under `state->lock`, rejects unless `name == state->instance`. Then `sync`, `kil
 - `image`: `opendir("/var/lib/initns/images")`, write each non-dot entry, `\n`-separated (no trailing newline between last entry and the `\n\n` framing).
 - `instance`: raw `read`/`write` the contents of `/var/lib/initns/instances`.
 - Anything else: `syntax\n`.
+
+### `cmd_help(out)`
+- Writes a static, built-in usage summary (one command per line) directly to the client. Like `cmd_ls`, it emits no `ok`/`error` status line — the body *is* the response, terminated by the `\n\n` frame added by `accept_cmd`. Edit the string literal in `cmd_help` when adding or removing commands.
 
 ## External processes invoked
 

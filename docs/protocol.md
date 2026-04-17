@@ -33,6 +33,7 @@ For `ls`, the response body is the listing itself (newline-separated), terminate
 | `stop <name>`        | name                   | Reject if unknown or not the currently running instance. Kill cgroup, rm cgroup, clear `state->instance`. |
 | `ls image`           | literal `image`        | Print basenames under `/var/lib/initns/images/` separated by `\n`. |
 | `ls instance`        | literal `instance`     | Print the raw contents of `/var/lib/initns/instances`. |
+| `help`               | (none)                 | Print a built-in usage summary of every command, `\n`-separated. No status line; terminates on the `\n\n` frame like `ls`. |
 
 All commands terminate with `write(out, "\n\n", 2)` plus `fsync(out)` (`cmd/cmd.c:272-273`).
 
