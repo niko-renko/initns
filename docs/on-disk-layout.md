@@ -6,7 +6,6 @@ All paths are set in `common.h` and `cgroup/cgroup.h`; there is no configuration
 
 ```
 /var/lib/initns/
-├── log                       # daemon stdout+stderr, append-only
 ├── instances                 # one instance name per line, newline-terminated
 ├── images/
 │   └── <image>.tar[.gz]      # container templates; referenced by filename in `initns new`

@@ -43,4 +43,4 @@ Container images are plain tarballs placed under `/var/lib/initns/images/<name>.
 
 ## Logging
 
-Once the daemon redirects fds, all `perror` / `die` output goes to `/var/lib/initns/log` (append mode). There is no rotation.
+Nothing is captured to a file. `die()` and other `perror` calls write to whatever stderr PID 1 was given by the kernel — `/dev/console` during boot, typically nothing useful after.

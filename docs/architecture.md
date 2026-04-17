@@ -17,11 +17,12 @@ Both link the same set of common modules (`set/`, `cmd/`, `kbd/`, `state/`, `cgr
 
 1. Creates `State` and installs it into thread-local storage (`state/`).
 2. `mkdir`s `/var/lib/initns`, `/var/lib/initns/images`, `/var/lib/initns/rootfs`.
-3. Closes all inherited fds (`clean_fds`) and redirects stdout/stderr to `/var/lib/initns/log`.
-4. `init_cgroup()` — mount cgroup v2 and create the `initns` parent cgroup.
-5. `spawn_kbd()` — start the keyboard watcher thread.
-6. `spawn_sock_cmd()` — start the Unix-socket command server thread.
-7. `pause()` forever.
+3. `init_cgroup()` — mount cgroup v2 and create the `initns` parent cgroup.
+4. `spawn_kbd()` — start the keyboard watcher thread.
+5. `spawn_sock_cmd()` — start the Unix-socket command server thread.
+6. `pause()` forever.
+
+stdout/stderr are whatever the kernel handed PID 1 (usually `/dev/console`); `perror` output from `die()` and `sock_cmd`'s `accept` failure lands there, nothing is captured to a file.
 
 Three long-running thread classes exist:
 
@@ -90,4 +91,4 @@ VT63 is outside the range most setups wire to a getty, so it can host an interac
 
 ## Error policy
 
-Almost every failure inside the daemon calls `die()` (perror + `exit(1)`). This is intentional for PID 1: if cgroup mounting, the socket, or the log fd fails, there is nothing sensible to recover to. The one notable long-running loop is `rm_poll()` in `cgroup/cgroup.c`, which retries `rmdir` on `EBUSY` with a 1 ms sleep until it succeeds or hits a different error — giving exiting processes a window to release cgroup references.
+Almost every failure inside the daemon calls `die()` (perror + `exit(1)`). This is intentional for PID 1: if cgroup mounting or the socket fails, there is nothing sensible to recover to. The rmdir path in `cgroup/cgroup.c` waits for `cgroup.events` to report `populated 0` via `poll(POLLPRI)` before walking the tree bottom-up, so `rmdir` never races a still-exiting process.

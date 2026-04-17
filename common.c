@@ -1,7 +1,9 @@
+#include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include <linux/input.h>
@@ -18,7 +20,15 @@
 #include <sys/wait.h>
 
 void die(const char *msg) {
-    perror(msg);
+    int fd = open("/dev/kmsg", O_WRONLY);
+    if (fd >= 0) {
+        char buf[256];
+        int n = snprintf(buf, sizeof(buf), "<3>initns: %s: %s\n", msg,
+                         strerror(errno));
+        if (n > 0)
+            write(fd, buf, n);
+        close(fd);
+    }
     exit(1);
 }
 

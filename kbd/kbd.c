@@ -56,7 +56,6 @@ static int is_kbd(const char *path) {
 static void on_device_added(const char *devpath) {
     if (!is_kbd(devpath))
         return;
-    printf("added: %s\n", devpath);
     spawn_seq_listener(devpath);
 }
 

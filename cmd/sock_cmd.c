@@ -51,16 +51,12 @@ static void *sock_cmd(void *arg) {
         if (cfd == -1) {
             if (errno == EINTR)
                 continue;
-            perror("accept");
-            break;
+            die("accept");
         }
 
         cmd(cfd, cfd);
         close(cfd);
     }
-
-    close(fd);
-    unlink(SOCK_PATH);
     return NULL;
 }
 
