@@ -38,8 +38,9 @@ Container images are plain tarballs placed under `/var/lib/initns/images/<name>.
 3. `initns run <instance>` — starts it via `clone3` into a fresh cgroup + namespaces and `execl("/sbin/init")`. If the same instance is already running it is unfrozen; if a *different* instance is running, it is killed and its cgroup removed.
 4. Press `Ctrl+Alt+J` at any keyboard: the running container is frozen and a bash shell is spawned on VT63 for host access. The kernel switches the console to VT63.
 5. `initns run <same-instance>` (from that shell or another TTY) — unfreezes the container and returns the console to VT1.
-6. `initns stop <instance>` — kills the cgroup, removes it, clears `state->instance`.
-7. `initns rm <instance>` — removes rootfs and drops the name from the instances file. Must not be the currently running one (the command does not check this; stop first).
+6. `initns commit <instance> <image>` — from the VT63 host shell, snapshot the (frozen) rootfs into `/var/lib/initns/images/<image>`. The resulting tarball is fed straight back to `initns new` on any host running `initns`. Rejects if the target file already exists.
+7. `initns stop <instance>` — kills the cgroup, removes it, clears `state->instance`.
+8. `initns rm <instance>` — removes rootfs and drops the name from the instances file. Must not be the currently running one (the command does not check this; stop first).
 
 ## Logging
 

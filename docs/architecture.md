@@ -99,7 +99,7 @@ The rmdir path in `cgroup/cgroup.c` waits for `cgroup.events` to report `populat
 
 Every child PID 1 forks is reaped at the site that forked it — there is no generic `SIGCHLD` handler. The rule: whoever knows the pid does the `waitpid`.
 
-- `clone_tar`, `clone_rm` (in `cmd/cmd.c`) and `clone_pkill` (in `ctl/ctl.c`) fork + `waitpid(pid, NULL, 0)` inline. Short-lived, one call site.
+- `clone_tar_extract`, `clone_rm` (in `cmd/cmd.c`) and `clone_pkill` (in `ctl/ctl.c`) fork + `waitpid(pid, NULL, 0)` inline. Short-lived, one call site.
 - **VT63 bash** — `state->ctl` holds its pid. Both `start_ctl` (preempt path) and `stop_ctl` `waitpid(state->ctl, NULL, 0)` after `clone_pkill` lands the SIGKILL.
 - **Container `/sbin/init`** — `clone_init` returns the pid; `cmd_run` stores it in `state->container`. After `kill_cgroup`, both `cmd_run` (preempt path) and `cmd_stop` `waitpid(state->container, NULL, 0)` before `rm_cgroup`.
 

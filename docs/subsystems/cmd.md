@@ -28,14 +28,19 @@ Only one connection is served at a time; there is no per-connection thread.
 
 ### `cmd_new(out, name, image)` — `cmd.c:94`
 - Rejects if `name` already in `/var/lib/initns/instances` **or** the image file does not exist at `/var/lib/initns/images/<image>`.
-- `file_add` the name, `mkdir` the rootfs dir, `clone_tar` (fork+`execl("/bin/tar", ..., "--strip-components=1", "-C", rootfs)`), `sync`.
+- `file_add` the name, `mkdir` the rootfs dir, `clone_tar_extract` (fork+`execl("/bin/tar", ..., "--strip-components=1", "-C", rootfs)`), `sync`.
+
+### `cmd_commit(out, name, image_name)`
+- Rejects if the instance is not in `/var/lib/initns/instances` **or** the target file `/var/lib/initns/images/<image>` already exists (overwriting a committed image silently would be easy to do by accident and hard to recover from).
+- `clone_tar_create` — fork+`execl("/bin/tar", "cf", image, "-C", rootfs, ".")` — then `sync` so the new image is durable before reply. No pre-tar sync: the container is already frozen (VT63 invariant), so there are no in-flight writes to chase, and `tar` reads through the VFS anyway.
+- Does **not** take `state->lock` or freeze the cgroup. The only way a caller reaches `/run/initns.sock` is through the VT63 bash shell, which is only entered via `Ctrl+Alt+J` → `on_ctl()` → `set_frozen_cgroup(state->instance, 1)`. So by the time `cmd_commit` runs, the container's rootfs is already quiescent. See `@../subsystems/kbd-ctl.md`.
 
 ### `cmd_rm(out, name)` — `cmd.c:114`
 - Rejects if not present in the instances file.
 - `clone_rm` (fork+`execl("/bin/rm", "-rf", rootfs)`), then `file_remove`, then `sync`.
 - Does **not** check whether the instance is currently running. Callers are expected to `stop` first.
 
-Both `clone_tar` and `clone_rm` block on `waitpid(pid, NULL, 0)` for the forked helper — any failure (including `ECHILD`) `die()`s, since no other reaper exists to race with them. The child exec paths end in `die("execl tar")` / `die("execl rm")` so a missing binary produces a kmsg line instead of silently continuing in the caller's control flow.
+`clone_tar_extract`, `clone_tar_create`, and `clone_rm` all block on `waitpid(pid, NULL, 0)` for the forked helper — any failure (including `ECHILD`) `die()`s, since no other reaper exists to race with them. The child exec paths end in `die("execl tar")` / `die("execl rm")` so a missing binary produces a kmsg line instead of silently continuing in the caller's control flow.
 
 ### `cmd_run(out, name)` — `cmd.c:131`
 Core of the system. Under `state->lock`:
@@ -77,5 +82,6 @@ Under `state->lock`, rejects unless `name == state->instance`. Then `sync`, `kil
 ## External processes invoked
 
 - `/bin/tar xf <img> --strip-components=1 -C <rootfs>` (image extraction)
+- `/bin/tar cf <img> -C <rootfs> .` (image creation, `commit`)
 - `/bin/rm -rf <rootfs>` (instance deletion)
 - `/sbin/init` inside the container (the pivoted rootfs must provide this)

@@ -31,7 +31,7 @@ static char *OK = "ok\n";
 static char *ERR = "error\n";
 static char *SYNTAX = "syntax\n";
 
-static void clone_tar(const char *tar, const char *dest) {
+static void clone_tar_extract(const char *tar, const char *dest) {
     pid_t pid = fork();
     if (pid < 0)
         die("fork");
@@ -42,6 +42,19 @@ static void clone_tar(const char *tar, const char *dest) {
     }
     execl("/bin/tar", "tar", "xf", tar, "--strip-components=1", "-C", dest,
           (char *)NULL);
+    die("execl tar");
+}
+
+static void clone_tar_create(const char *image, const char *src) {
+    pid_t pid = fork();
+    if (pid < 0)
+        die("fork");
+    if (pid > 0) {
+        if (waitpid(pid, NULL, 0) == -1)
+            die("waitpid");
+        return;
+    }
+    execl("/bin/tar", "tar", "cf", image, "-C", src, ".", (char *)NULL);
     die("execl tar");
 }
 
@@ -107,7 +120,25 @@ static void cmd_new(int out, char *name, char *image_name) {
 
     file_add(instances, name);
     mkdir(rootfs, 0755);
-    clone_tar(image, rootfs);
+    clone_tar_extract(image, rootfs);
+    sync();
+    write(out, OK, strlen(OK));
+}
+
+static void cmd_commit(int out, char *name, char *image_name) {
+    char instances[PATH_MAX];
+    snprintf(instances, PATH_MAX, "%s/instances", ROOT);
+    char rootfs[PATH_MAX];
+    snprintf(rootfs, PATH_MAX, "%s/rootfs/%s", ROOT, name);
+    char image[PATH_MAX];
+    snprintf(image, PATH_MAX, "%s/images/%s", ROOT, image_name);
+
+    if (!file_contains(instances, name) || access(image, F_OK) == 0) {
+        write(out, ERR, strlen(ERR));
+        return;
+    }
+
+    clone_tar_create(image, rootfs);
     sync();
     write(out, OK, strlen(OK));
 }
@@ -253,6 +284,8 @@ static void accept_cmd(int out, char *line, int n) {
         write(out, SYNTAX, strlen(SYNTAX));
     else if (strcmp(cmd, "new") == 0 && arg2)
         cmd_new(out, arg, arg2);
+    else if (strcmp(cmd, "commit") == 0 && arg2)
+        cmd_commit(out, arg, arg2);
     else if (strcmp(cmd, "rm") == 0)
         cmd_rm(out, arg);
     else if (strcmp(cmd, "run") == 0)
