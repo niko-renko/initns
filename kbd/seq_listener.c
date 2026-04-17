@@ -33,7 +33,11 @@ static void *seq_listener(void *arg) {
     struct seq_listener_args *args = arg;
     set_state(args->state);
 
-    int fd = open(args->device_path, O_RDONLY | O_NONBLOCK);
+    char device_path[PATH_MAX];
+    strncpy(device_path, args->device_path, sizeof(device_path));
+    free(args);
+
+    int fd = open(device_path, O_RDONLY | O_NONBLOCK);
     if (fd < 0)
         return NULL;
 
@@ -64,11 +68,14 @@ static void *seq_listener(void *arg) {
 void spawn_seq_listener(const char *devpath) {
     pthread_t seq_listener_t;
     struct seq_listener_args *args = malloc(sizeof(*args));
+    if (!args)
+        die("malloc");
     args->state = get_state();
     strncpy(args->device_path, devpath, sizeof(args->device_path) - 1);
     args->device_path[sizeof(args->device_path) - 1] = '\0';
-    if (pthread_create(&seq_listener_t, NULL, seq_listener, args) != 0)
+    if (pthread_create(&seq_listener_t, NULL, seq_listener, args) != 0) {
+        free(args);
         die("pthread_create");
-    free(args);
-    return;
+    }
+    pthread_detach(seq_listener_t);
 }
