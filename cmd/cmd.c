@@ -60,7 +60,8 @@ static void clone_tar_create(const char *image, const char *src) {
     die("execl tar");
 }
 
-static void clone_tar_create_onefs(const char *image, const char *src) {
+static void clone_tar_create_onefs(const char *image, const char *src,
+                                   const char *exclude) {
     pid_t pid = fork();
     if (pid < 0)
         die("fork");
@@ -70,7 +71,7 @@ static void clone_tar_create_onefs(const char *image, const char *src) {
         return;
     }
     execl("/bin/tar", "tar", "cf", image, "--one-file-system",
-          "--numeric-owner", "--xattrs", "--acls", "-C", src, ".",
+          "--numeric-owner", "--xattrs", "--acls", exclude, "-C", src, ".",
           (char *)NULL);
     die("execl tar");
 }
@@ -171,7 +172,23 @@ static void cmd_seed(int out, char *source_dir, char *image_name) {
         return;
     }
 
-    clone_tar_create_onefs(image, source_dir);
+    // Archive members from `tar -C src .` are "./<path-relative-to-src>".
+    // To exclude ROOT, build "./<ROOT-relative-to-src>". If src isn't an
+    // ancestor of ROOT, the pattern is inert (no archive member matches).
+    size_t slen = strlen(source_dir);
+    while (slen > 1 && source_dir[slen - 1] == '/')
+        slen--;
+    const char *rel = ROOT;
+    if (strncmp(ROOT, source_dir, slen) == 0 &&
+        (slen == 1 || ROOT[slen] == '/' || ROOT[slen] == '\0')) {
+        rel = ROOT + slen;
+        if (*rel == '/')
+            rel++;
+    }
+    char exclude[PATH_MAX];
+    snprintf(exclude, PATH_MAX, "--exclude=./%s", rel);
+
+    clone_tar_create_onefs(image, source_dir, exclude);
     sync();
     write(out, OK, strlen(OK));
 }

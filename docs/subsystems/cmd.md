@@ -41,8 +41,9 @@ Numeric uid/gid (not name-resolved against host `/etc/passwd`), file capabilitie
 
 ### `cmd_seed(out, source_dir, image_name)`
 - Rejects if `/var/lib/initns/images/<image>` already exists **or** `source_dir` is missing / not a directory.
-- `clone_tar_create_onefs` — fork+`execl("/bin/tar", "cf", image, "--one-file-system", …, "-C", source_dir, ".")` — then `sync`.
+- `clone_tar_create_onefs` — fork+`execl("/bin/tar", "cf", image, "--one-file-system", …, "--exclude=./<ROOT-relative-to-src>", "-C", source_dir, ".")` — then `sync`.
 - Intended use: "turn this mounted filesystem into an image as-is." `--one-file-system` means tar walks only the filesystem that `source_dir` lives on, recording mountpoints for other filesystems (`/proc`, `/sys`, `/dev`, `/run`, `/tmp`, separate `/home`, `/boot/efi`, …) as empty directory entries. That is exactly the "contents of the persistent disk mount" view — which is what `commit` also produces, since container mounts live in a private mount namespace invisible to the host-side tar.
+- The `--exclude` pattern keeps initns's own state — other images, extracted rootfses, the instance file — out of the snapshot. Without it, `initns seed init /` would archive its own output file and every other image/rootfs already on disk, which is unbounded and useless. Tar stores members as `./<path-relative-to-src>`, so the exclude pattern is built the same way: `./` plus `ROOT` with the `src` prefix stripped. `src=/` → `--exclude=./var/lib/initns`; `src=/var` → `--exclude=./lib/initns`; `src=/mnt` → the computed pattern doesn't match any member, so the exclude is inert (which is correct — ROOT isn't under `/mnt`).
 - No validation beyond "dir exists and image doesn't." The source need not be a container rootfs; `seed` is deliberately a thin wrapper around `tar --one-file-system` so that loop-mounted disk images, `pacstrap` / `debootstrap` trees, and live host rootfs all work from the same command.
 
 ### `cmd_commit(out, name, image_name)`
@@ -101,6 +102,6 @@ Under `state->lock`, rejects unless `name == state->instance`. Then `sync`, `kil
 
 - `/bin/tar xf <img> --strip-components=1 --numeric-owner --xattrs --xattrs-include=* --acls -C <rootfs>` (image extraction, `new`)
 - `/bin/tar cf <img> --numeric-owner --xattrs --acls -C <rootfs> .` (image creation, `commit`)
-- `/bin/tar cf <img> --one-file-system --numeric-owner --xattrs --acls -C <src> .` (image creation, `seed`)
+- `/bin/tar cf <img> --one-file-system --numeric-owner --xattrs --acls --exclude=./<ROOT-rel-to-src> -C <src> .` (image creation, `seed`)
 - `/bin/rm -rf <rootfs>` (instance deletion)
 - `/sbin/init` inside the container (the pivoted rootfs must provide this)
