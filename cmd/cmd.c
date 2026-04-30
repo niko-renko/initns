@@ -6,14 +6,17 @@
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <linux/input.h>
 #include <linux/kd.h>
+#include <linux/reboot.h>
 #include <linux/sched.h>
 #include <linux/vt.h>
 
 #include <sys/mount.h>
+#include <sys/reboot.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -320,6 +323,75 @@ static void cmd_stop(int out, char *name) {
     write(out, OK, strlen(OK));
 }
 
+// Graceful host reboot/poweroff. The running container's systemd is signaled
+// with SIGRTMIN+5 (reboot.target) or SIGRTMIN+4 (poweroff.target) so it can
+// run its own shutdown jobs (unmount, journal flush, ACPI _PTS via device
+// .shutdown callbacks). Only after the container has exited do we sync and
+// invoke reboot(2) ourselves.
+//
+// Why this matters on AMD AM5: `reboot -f` from a host-context shell skips
+// container teardown, leaving the platform in a post-S3-resume state when the
+// kernel walks its reboot-method list. ACPI reset fails, the kernel falls
+// through to writing 0x06 to port 0xCF9, and on MSI X870 boards that
+// hard-reset path after S3 trips memory training failure -> auto CMOS reset.
+static void cmd_reboot(int out, int how) {
+    State *state = get_state();
+    pthread_mutex_lock(&state->lock);
+    pid_t container = state->container;
+    char instance[256];
+    instance[0] = '\0';
+    if (state->instance[0])
+        strncpy(instance, state->instance, sizeof(instance) - 1);
+    pthread_mutex_unlock(&state->lock);
+
+    int reaped = 0;
+    if (container > 0 && instance[0] != '\0') {
+        // Thaw if frozen, otherwise systemd can't run its shutdown target.
+        set_frozen_cgroup(instance, 0);
+
+        int sig = (how == RB_POWER_OFF) ? SIGRTMIN + 4 : SIGRTMIN + 5;
+        if (kill(container, sig) == 0) {
+            // Up to 30s for systemd to walk shutdown.target.
+            for (int i = 0; i < 300; i++) {
+                int r = waitpid(container, NULL, WNOHANG);
+                if (r == container) {
+                    reaped = 1;
+                    break;
+                }
+                if (r < 0)
+                    break;
+                struct timespec ts = {0, 100L * 1000 * 1000};
+                nanosleep(&ts, NULL);
+            }
+        }
+
+        // Fallback: SIGKILL via cgroup.kill if systemd didn't exit in time.
+        if (!reaped) {
+            kill_cgroup(instance);
+            if (waitpid(container, NULL, 0) > 0)
+                reaped = 1;
+        }
+        rm_cgroup(instance);
+
+        pthread_mutex_lock(&state->lock);
+        state->container = 0;
+        state->instance[0] = '\0';
+        pthread_mutex_unlock(&state->lock);
+    }
+
+    write(out, OK, strlen(OK));
+    write(out, "\n\n", 2);
+    fsync(out);
+
+    // Drain pending writes. Two syncs because the second waits for the
+    // writeback the first kicked off (relevant for the Samsung simple-suspend
+    // NVMe quirk that defers FUA flushes).
+    sync();
+    sync();
+    reboot(how);
+    die("reboot");
+}
+
 static void cmd_help(int out) {
     static const char help[] =
         "new <name> <image>      create instance from image\n"
@@ -329,6 +401,8 @@ static void cmd_help(int out) {
         "stop <name>             kill instance\n"
         "rm <name>               delete instance\n"
         "ls image | instance     list images or instances\n"
+        "reboot                  graceful host reboot\n"
+        "poweroff                graceful host poweroff\n"
         "help                    this help";
     write(out, help, sizeof(help) - 1);
 }
@@ -347,6 +421,10 @@ static void accept_cmd(int out, char *line, int n) {
         write(out, SYNTAX, strlen(SYNTAX));
     else if (strcmp(cmd, "help") == 0)
         cmd_help(out);
+    else if (strcmp(cmd, "reboot") == 0)
+        cmd_reboot(out, RB_AUTOBOOT);
+    else if (strcmp(cmd, "poweroff") == 0)
+        cmd_reboot(out, RB_POWER_OFF);
     else if (!arg)
         write(out, SYNTAX, strlen(SYNTAX));
     else if (strcmp(cmd, "new") == 0 && arg2)
