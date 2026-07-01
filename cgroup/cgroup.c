@@ -24,15 +24,44 @@
 #include "../common.h"
 #include "cgroup.h"
 
+// Enable the resource controllers for a cgroup's children by writing them to
+// cgroup.subtree_control, best-effort: a controller absent from this cgroup's
+// cgroup.controllers can't be enabled, so ignore per-controller failures rather
+// than panic PID 1. cgroup v2 requires every ancestor to list a controller in
+// subtree_control before a descendant may use it.
+static void delegate_controllers(const char *cgdir) {
+    char path[PATH_MAX];
+    snprintf(path, sizeof(path), "%s/cgroup.subtree_control", cgdir);
+    int fd = open(path, O_WRONLY | O_CLOEXEC);
+    if (fd < 0)
+        die("subtree_control open");
+    static const char *const ctrls[] = {"+cpu", "+cpuset", "+io", "+memory",
+                                        "+pids"};
+    for (size_t i = 0; i < sizeof(ctrls) / sizeof(ctrls[0]); i++) {
+        ssize_t r = write(fd, ctrls[i], strlen(ctrls[i]));
+        (void)r; // best-effort; a controller not available here is skipped
+    }
+    close(fd);
+}
+
 void init_cgroup(void) {
     char cgpath[PATH_MAX];
 
     if (mount("cgroup", CGROUP_ROOT, "cgroup2", 0, NULL) < 0 && errno != EBUSY)
         die("cgroup");
 
+    // Make the controllers available to descendants. Without this a container's
+    // cgroup inherits an empty cgroup.controllers and nested runtimes
+    // (Docker/kind) can't set cpu/memory limits — kubelet fails writing
+    // cpu.weight. The root cgroup is exempt from the no-internal-process rule,
+    // so enabling here is legal despite PID 1 living in it.
+    delegate_controllers(CGROUP_ROOT);
+
     snprintf(cgpath, sizeof(cgpath), "%s/%s", CGROUP_ROOT, CGROUP_NAME);
     if (mkdir(cgpath, 0755) == -1 && errno != EEXIST)
         die("mkdir");
+
+    delegate_controllers(cgpath);
 }
 
 int new_cgroup(char *name) {
